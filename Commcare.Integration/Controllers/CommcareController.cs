@@ -1,13 +1,8 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Commcare.Integration.Entities;
+using Commcare.Integration.Services;
 using Microsoft.AspNetCore.Mvc;
-using Nancy;
-using Nancy.Json;
 using Newtonsoft.Json.Linq;
-using System;
-using System.Globalization;
-using System.Net.Http;
 using System.Text;
-using System.Xml.Serialization;
 
 namespace Commcare.Integration.Controllers
 {
@@ -15,6 +10,13 @@ namespace Commcare.Integration.Controllers
     [ApiController]
     public class CommcareController : Controller
     {
+        private readonly FormDataService _formDataService;
+
+        public CommcareController(FormDataService formDataService)
+        {
+            _formDataService = formDataService;
+        }
+
         [HttpGet("process")]
         public IActionResult ProcessJson()
         {
@@ -47,8 +49,22 @@ namespace Commcare.Integration.Controllers
                 json = stream.ReadToEnd();
             }
 
-            List<JToken> children = JObject.Parse(json).Descendants().Where(x => x.Type == JTokenType.Property && x.HasValues == true).ToList();
-            //JArray token = Flatten(json);
+            List<JToken> DataValues = JObject.Parse(json).Descendants().Where(x => x.Type == JTokenType.Property && x.HasValues == true).ToList();
+
+            List<FormData> FormData = new List<FormData>();
+
+            foreach (JToken dataValue in DataValues)
+            {
+                FormData data = new FormData();
+                data.FormId = "";
+                data.FieldName = "";
+                data.FieldValue = "";
+                data.AppId = "";
+
+                FormData.Add(data);
+            }
+
+            _formDataService.Save(FormData);
 
             return Ok(new { message = "Updated successfully" });
         }

@@ -9,5 +9,6 @@ namespace Commcare.Integration.Entities
         public string? FormId { get; set; }
         public string? FieldName { get; set; }
         public string? FieldValue { get; set; }
+        public string? AppId { get; set; }
     }
 }
