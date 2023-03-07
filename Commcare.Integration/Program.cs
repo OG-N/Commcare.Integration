@@ -1,4 +1,6 @@
 using Commcare.Integration;
+using Commcare.Integration.Repositories;
+using Commcare.Integration.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,7 +10,13 @@ builder.Configuration
     .AddEnvironmentVariables();
 builder.Services.AddDbContext<DataContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 // Add services to the container.
+builder.Services.AddScoped(typeof(Repository<>));
+builder.Services.AddScoped(typeof(FormDataRepository));
+builder.Services.AddScoped(typeof(FormDataService));
+builder.Services.AddScoped(typeof(PullHistoryRepository));
+builder.Services.AddScoped(typeof(PullHistoryService));
 
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -29,5 +37,7 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
+EnsureMigration.EnsureMigrationOfContext<DataContext>(app);
 
 app.Run();
