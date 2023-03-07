@@ -16,10 +16,7 @@ namespace Commcare.Integration.Services
             List<FormData> saveddata = new List<FormData>();
             try
             {
-                foreach (var data in formDatas)
-                {
-                    saveddata.Add(_repository.Create(data));
-                }
+                saveddata = _repository.CreateMultiple(formDatas.ToList());
                 return saveddata;
             }
             catch (Exception)

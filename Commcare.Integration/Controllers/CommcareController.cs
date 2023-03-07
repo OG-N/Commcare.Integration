@@ -16,19 +16,29 @@ namespace Commcare.Integration.Controllers
     {
         private readonly FormDataService _formDataService;
         private readonly PullHistoryService _pullHistoryService;
-        private readonly string baseUrl = "https://www.commcarehq.org/a/palladium-1/api/v0.5/form/";
-        private readonly string username = "kennedy.kirui@thepalladiumgroup.com";
-        private readonly string password = "Teket2010!";
+        private readonly IConfiguration _configuration;
+        private string baseUrl;
+        private string username;
+        private string password;
 
-        public CommcareController(FormDataService formDataService, PullHistoryService pullHistoryService)
+        public CommcareController(FormDataService formDataService, PullHistoryService pullHistoryService, IConfiguration iconfig)
         {
             _formDataService = formDataService;
             _pullHistoryService = pullHistoryService;
+            _configuration = iconfig;
+
+            baseUrl = "https://www.commcarehq.org/a/palladium-1/api/v0.5/form/";
+            //username = _configuration.GetValue<string>("Username");
+            //password = _configuration.GetValue<string>("Password");
+            username = "kennedy.kirui@thepalladiumgroup.com";
+            password = "Teket2010!";
         }
 
         [HttpGet("new-records")]
         public IActionResult DownloadNewRecords()
         {
+            DateTime pullDate = DateTime.Now;
+
             //get last execution time
             PullHistory history = _pullHistoryService.GetLastRecord();
             string lastExecution = history.CreateDate.ToString("yyyy-MM-ddTHH:mm:ss");
@@ -41,7 +51,7 @@ namespace Commcare.Integration.Controllers
             ProcessData(json);
 
             //Save pull history
-            _pullHistoryService.Save(new PullHistory { PullDate=DateTime.Now, PullStatus="Success" });
+            SavePullHistory(pullDate);
 
             return Ok(new { message = "Downloaded successfully" });
         }
@@ -49,6 +59,8 @@ namespace Commcare.Integration.Controllers
         [HttpGet("old-records")]
         public IActionResult DownloadOldRecords()
         {
+            DateTime pullDate = DateTime.Now;
+
             //download
             string url = baseUrl + "?limit=1000";
             string json = DownloadData(url);
@@ -57,9 +69,14 @@ namespace Commcare.Integration.Controllers
             ProcessData(json);
 
             //Save pull history
-            _pullHistoryService.Save(new PullHistory { PullDate = DateTime.Now, PullStatus = "Success" });
+            SavePullHistory(pullDate);
 
             return Ok(new { message = "Downloaded successfully" });
+        }
+
+        private void SavePullHistory(DateTime _pullDate)
+        {
+            _pullHistoryService.Save(new PullHistory { PullDate = _pullDate, PullStatus = "Success" });
         }
 
         private string DownloadData(string url)
