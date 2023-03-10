@@ -1,13 +1,12 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Commcare.Integration.Entities;
+using Commcare.Integration.Services;
 using Microsoft.AspNetCore.Mvc;
-using Nancy;
+using Microsoft.SqlServer.Server;
 using Nancy.Json;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System;
-using System.Globalization;
-using System.Net.Http;
+using System.Security.Principal;
 using System.Text;
-using System.Xml.Serialization;
 
 namespace Commcare.Integration.Controllers
 {
@@ -15,13 +14,73 @@ namespace Commcare.Integration.Controllers
     [ApiController]
     public class CommcareController : Controller
     {
-        [HttpGet("process")]
-        public IActionResult ProcessJson()
-        {
-            string url = "https://www.commcarehq.org/a/palladium-1/api/v0.5/form/";
-            string username = "kennedy.kirui@thepalladiumgroup.com";
-            string password = "Teket2010!";
+        private readonly FormDataService _formDataService;
+        private readonly PullHistoryService _pullHistoryService;
+        private readonly IConfiguration _configuration;
+        private string baseUrl;
+        private string username;
+        private string password;
 
+        public CommcareController(FormDataService formDataService, PullHistoryService pullHistoryService, IConfiguration iconfig)
+        {
+            _formDataService = formDataService;
+            _pullHistoryService = pullHistoryService;
+            _configuration = iconfig;
+
+            baseUrl = "https://www.commcarehq.org/a/palladium-1/api/v0.5/form/";
+            //username = _configuration.GetValue<string>("Username");
+            //password = _configuration.GetValue<string>("Password");
+            username = "kennedy.kirui@thepalladiumgroup.com";
+            password = "Teket2010!";
+        }
+
+        [HttpGet("new-records")]
+        public IActionResult DownloadNewRecords()
+        {
+            DateTime pullDate = DateTime.Now;
+
+            //get last execution time
+            PullHistory history = _pullHistoryService.GetLastRecord();
+            string lastExecution = history.CreateDate.ToString("yyyy-MM-ddTHH:mm:ss");
+
+            //download
+            string url = baseUrl + "?limit=200&received_on_start=" + lastExecution;
+            string json = DownloadData(url);
+
+            //process json and save
+            ProcessData(json);
+
+            //Save pull history
+            SavePullHistory(pullDate);
+
+            return Ok(new { message = "Downloaded successfully" });
+        }
+
+        [HttpGet("old-records")]
+        public IActionResult DownloadOldRecords()
+        {
+            DateTime pullDate = DateTime.Now;
+
+            //download
+            string url = baseUrl + "?limit=1000";
+            string json = DownloadData(url);
+
+            //process json and save
+            ProcessData(json);
+
+            //Save pull history
+            SavePullHistory(pullDate);
+
+            return Ok(new { message = "Downloaded successfully" });
+        }
+
+        private void SavePullHistory(DateTime _pullDate)
+        {
+            _pullHistoryService.Save(new PullHistory { PullDate = _pullDate, PullStatus = "Success" });
+        }
+
+        private string DownloadData(string url)
+        {
             HttpMessageHandler handler = new HttpClientHandler()
             {
             };
@@ -33,8 +92,6 @@ namespace Commcare.Integration.Controllers
             };
 
             httpClient.DefaultRequestHeaders.Add("ContentType", "application/json");
-
-            //This is the key section you were missing    
             var plainTextBytes = Encoding.UTF8.GetBytes(username + ":" + password);
             string val = Convert.ToBase64String(plainTextBytes);
             httpClient.DefaultRequestHeaders.Add("Authorization", "Basic " + val);
@@ -47,58 +104,44 @@ namespace Commcare.Integration.Controllers
                 json = stream.ReadToEnd();
             }
 
-            List<JToken> children = JObject.Parse(json).Descendants().Where(x => x.Type == JTokenType.Property && x.HasValues == true).ToList();
-            //JArray token = Flatten(json);
-
-            return Ok(new { message = "Updated successfully" });
+            return json;
         }
 
-        public static JArray Flatten(string json)
+        private bool ProcessData(string json)
         {
-            JObject jo = JObject.Parse(json);
-            JToken input = jo.Descendants()
-                .Where(t => t.Type == JTokenType.Property && ((JProperty)t).Name == "objects")
-                .Select(p => ((JProperty)p).Value)
-                .FirstOrDefault();
+            List<FormData> formdata = new List<FormData>();
 
-            //JToken input = JToken.Parse(json);
-            var res = new JArray();
-            foreach (var obj in GetFlattenedObjects(input))
-                res.Add(obj);
-            return res;
-        }
-
-        public static IEnumerable<JToken> GetFlattenedObjects(JToken token, IEnumerable<JProperty> OtherProperties = null)
-        {
-            if (token is JObject obj)
+            try
             {
-                var children = obj.Children<JProperty>().GroupBy(prop => prop.Value?.Type == JTokenType.Array).ToDictionary(gr => gr.Key);
-                if (children.TryGetValue(false, out var directProps))
-                    OtherProperties = OtherProperties?.Concat(directProps) ?? directProps; //NB, no checks if any sub collection contains duplicate prop names
-
-                if (children.TryGetValue(true, out var ChildCollections))
+                //Save received json string
+                Commcare commcare = JsonConvert.DeserializeObject<Commcare>(json);
+                foreach (object obj in commcare.objects)
                 {
-                    foreach (var childObj in ChildCollections.SelectMany(childColl => childColl.Values()).SelectMany(childColl => GetFlattenedObjects(childColl, OtherProperties)))
-                        yield return childObj;
-                }
-                else //no (more) child properties, return an object
-                {
-                    var res = new JObject();
-                    if (OtherProperties != null)
-                        foreach (var prop in OtherProperties)
-                            res.Add(prop);
-                    yield return res;
-                }
-            }
-            else if (token is JArray arr)
-            {
-                foreach (var co in token.Children().SelectMany(c => GetFlattenedObjects(c, OtherProperties)))
-                    yield return co;
-            }
-            else
-                throw new NotImplementedException(token.GetType().Name);
+                    List<JToken> DataValues = JObject.Parse(obj.ToString()).Descendants().Where(x => x.HasValues == false).ToList();
 
+                    JToken Id = DataValues.Where(x => x.Path == "id").FirstOrDefault();
+                    JToken appId = DataValues.Where(x => x.Path == "app_id").FirstOrDefault();
 
+                    foreach (JToken dataValue in DataValues)
+                    {
+                        FormData data = new FormData();
+                        data.FormId = Id.ToString();
+                        data.FieldName = dataValue.Path;
+                        data.FieldValue = dataValue.ToString();
+                        data.AppId = appId.ToString();
+
+                        formdata.Add(data);
+                    }
+                }
+
+                _formDataService.Save(formdata);
+
+                return true;
+            }
+            catch
+            { 
+                return false;
+            }
         }
     }
 }

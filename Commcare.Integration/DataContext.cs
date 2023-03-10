@@ -23,5 +23,6 @@ namespace Commcare.Integration
         public DbSet<FormData> FormDatas { get; set; }
         public DbSet<FormDetail> FormDetails { get; set; }
         public DbSet<FormField> FormFields { get; set; }
+        public DbSet<PullHistory> PullHistories { get; set; }
     }
 }

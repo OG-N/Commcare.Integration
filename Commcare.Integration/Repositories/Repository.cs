@@ -16,6 +16,16 @@ namespace Commcare.Integration.Repositories
             DbSet = _dataContext.Set<T>();
         }
 
+        public List<T> CreateMultiple(List<T> entities)
+        {
+            foreach (var entity in entities)
+            {
+                DbSet.Add(entity);
+            }
+            _dataContext.SaveChanges();
+            return entities;
+        }
+
         public T Create(T entity)
         {
             DbSet.Add(entity);
