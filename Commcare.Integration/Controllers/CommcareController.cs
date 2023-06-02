@@ -28,10 +28,8 @@ namespace Commcare.Integration.Controllers
             _configuration = iconfig;
 
             baseUrl = "https://www.commcarehq.org/a/palladium-1/api/v0.5/form/";
-            //username = _configuration.GetValue<string>("Username");
-            //password = _configuration.GetValue<string>("Password");
-            username = "kennedy.kirui@thepalladiumgroup.com";
-            password = "Teket2010!";
+            username = _configuration.GetValue<string>("Username");
+            password = _configuration.GetValue<string>("Password");
         }
 
         [HttpGet("new-records")]
